@@ -16,5 +16,3 @@ UAISystemSettings::UAISystemSettings() {
     this->VannyMeterPerHourBase.AddDefaulted(6);
 }
 
-//test
-
