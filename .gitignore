@@ -4,9 +4,11 @@
 # Allow directory traversal
 !*/
 
-# Whitelist everything in Source/ and Plugins/
+# Whitelist everything in Source/
 !Source/**
-!Plugins/**
+
+# Only whitelist the BlueprintUncooker plugin
+!Plugins/BlueprintUncooker/**
 
 # Blacklist directories that should never be tracked
 Engine/
