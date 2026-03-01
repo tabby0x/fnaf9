@@ -82,6 +82,7 @@ void UAIManagementSystem::Initialize(FSubsystemCollectionBase& Collection)
     {
         // Filter by mode: Chowda-folder assets for ChowdaMode, Game-folder for Normal
         TArray<FSoftObjectPath> AssetsToLoad;
+        TArray<FAssetData> FilteredAssetData;
         for (const FAssetData& Asset : CharacterInfoAssets)
         {
             FSoftObjectPath SoftPath = Asset.ToSoftObjectPath();
@@ -91,6 +92,7 @@ void UAIManagementSystem::Initialize(FSubsystemCollectionBase& Collection)
             if (bIsChowdaMode == bIsChowdaAsset)
             {
                 AssetsToLoad.Add(SoftPath);
+                FilteredAssetData.Add(Asset);
             }
         }
 
@@ -98,7 +100,7 @@ void UAIManagementSystem::Initialize(FSubsystemCollectionBase& Collection)
         {
             FStreamableManager& StreamableManager = AssetManager.GetStreamableManager();
             StreamableManager.RequestAsyncLoad(AssetsToLoad,
-                FStreamableDelegate::CreateUObject(this, &UAIManagementSystem::OnAICharacterInfoLoaded, CharacterInfoAssets));
+                FStreamableDelegate::CreateUObject(this, &UAIManagementSystem::OnAICharacterInfoLoaded, FilteredAssetData));
         }
     }
 
@@ -3036,12 +3038,13 @@ void UAIManagementSystem::FindSpawnNotVisibleAtDistance(float Distance, EFNAFAIS
         float DotProduct = FVector::DotProduct(CameraForward, DirToSpawn);
         if (DotProduct > 0.7f)
         {
+            // In view - do line trace to confirm
             FHitResult HitResult;
             FCollisionQueryParams QueryParams;
             bool bHit = World->LineTraceSingleByChannel(HitResult, CameraLocation, SpawnLocation, ECC_Visibility, QueryParams);
             if (!bHit)
             {
-                continue; // Visible
+                continue; // Visible, skip
             }
         }
 
