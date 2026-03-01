@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Blueprint Uncooker",
+	"Description": "Decompiles cooked Blueprint bytecode back into editable UBlueprint assets with full graph reconstruction. Right-click any cooked Blueprint in the Content Browser and select Uncook Blueprint.",
+	"Category": "Editor",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Modules": [
+		{
+			"Name": "BlueprintUncooker",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
+		}
+	]
+}

@@ -1,0 +1,41 @@
+# Ignore everything
+*
+
+# Allow directory traversal
+!*/
+
+# Whitelist everything in Source/ and Plugins/
+!Source/**
+!Plugins/**
+
+# Blacklist directories that should never be tracked
+Engine/
+Intermediate/
+Binaries/
+Saved/
+DerivedDataCache/
+Build/
+.vs/
+.claude/
+
+# Blacklist binary/asset files even if inside Source/Plugins
+*.uasset
+*.umap
+*.uexp
+*.ubulk
+*.pak
+*.dll
+*.so
+*.lib
+*.pdb
+*.exe
+*.o
+*.obj
+*.a
+
+
+# Root files to keep
+!.gitignore
+!README.md
+!LICENSE
+!*.uproject
