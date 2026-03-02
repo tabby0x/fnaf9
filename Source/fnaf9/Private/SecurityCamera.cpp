@@ -66,11 +66,19 @@ void ASecurityCamera::BeginPlay()
         }
     }
 
-    EnemyDetector->SetSightEnabled(bEnemyDetectorStartsOn);
-    PlayerDetector->SetSightEnabled(bPlayerDetectorStartsOn);
+    if (EnemyDetector)
+    {
+        EnemyDetector->SetSightEnabled(bEnemyDetectorStartsOn);
+        EnemyDetector->OnSightChanged.RemoveDynamic(this, &ASecurityCamera::OnEnemyDetectorSightChanged);
+        EnemyDetector->OnSightChanged.AddUniqueDynamic(this, &ASecurityCamera::OnEnemyDetectorSightChanged);
+    }
 
-    PlayerDetector->OnSightChanged.AddDynamic(this, &ASecurityCamera::OnPlayerDetectorSightChanged);
-    EnemyDetector->OnSightChanged.AddDynamic(this, &ASecurityCamera::OnEnemyDetectorSightChanged);
+    if (PlayerDetector)
+    {
+        PlayerDetector->SetSightEnabled(bPlayerDetectorStartsOn);
+        PlayerDetector->OnSightChanged.RemoveDynamic(this, &ASecurityCamera::OnPlayerDetectorSightChanged);
+        PlayerDetector->OnSightChanged.AddUniqueDynamic(this, &ASecurityCamera::OnPlayerDetectorSightChanged);
+    }
 
     // Super::BeginPlay called last (matches original binary)
     Super::BeginPlay();
