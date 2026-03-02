@@ -37,6 +37,19 @@
 #include "DrawDebugHelpers.h"
 #include "CollisionQueryParams.h"
 #include "TimerManager.h"
+#include "NavigationSystem.h"
+#include "GameFramework/PlayerController.h"
+
+/* IDA: async pathfinding worker (~176 bytes). OnNavResult computes
+   abs(navPathLength - ExpectedLength) and tracks best match via ClosestID.
+   Our synchronous impl in AddFindClosestPatrolPointQueries replaces the
+   async flow, so only ExpectedLength is needed. */
+struct FNearestToDistancePathFinder
+{
+    float ExpectedLength = 100.0f;
+    float BestPathLength = FLT_MAX;
+    int32 ClosestID = -1;
+};
 
 DEFINE_LOG_CATEGORY_STATIC(LogAIManagement, Log, All);
 
@@ -2100,6 +2113,18 @@ void UAIManagementSystem::HandleHidingAI()
 }
 
 // Spawn functions
+/**
+ * IDA: 0x140f3e530 + UpdateOperation at 0x140f48f10
+ * Original uses FVanessaVannySpawnLatentAction with async nav path queries.
+ * Simplified to synchronous with Euclidean distance (nav queries are an optimization).
+ *
+ * Fixed vs previous implementation:
+ *  - bSpawnVanny now controls Shattered(Vanny) vs None(Vanessa) subtype
+ *  - Uses SpawnAIAtSpawnPoint (respects spawn point AIType) instead of hardcoded type
+ *  - Uses PlayerController::GetPlayerViewPoint instead of camera manager
+ *  - Line traces ALL spawn points (no FOV pre-check, matching IDA)
+ *  - Enforces MinimumSpawnDistance from AISystemSettings CDO
+ */
 void UAIManagementSystem::SpawnVannyOrVanessa(bool bSpawnVanny, bool& bOutSpawned, FLatentActionInfo LatentActionInfo)
 {
     bOutSpawned = false;
@@ -2109,61 +2134,50 @@ void UAIManagementSystem::SpawnVannyOrVanessa(bool bSpawnVanny, bool& bOutSpawne
         return;
     }
 
-    // Check if Vanessa/Vanny already exists
-    APawn* ExistingVanessa = GetPawnForType(EFNAFAISpawnType::Vanessa);
-    if (ExistingVanessa)
+    /* IDA: iterates RegisteredPawns checking IFNAFManagedAI::GetManagedAIType == Vanessa */
+    for (APawn* Pawn : RegisteredPawns)
     {
-        return;
+        if (!Pawn || !IsValid(Pawn)) continue;
+        if (Pawn->GetClass()->ImplementsInterface(UFNAFManagedAI::StaticClass()))
+        {
+            if (IFNAFManagedAI::Execute_GetManagedAIType(Pawn) == EFNAFAISpawnType::Vanessa)
+            {
+                return;
+            }
+        }
     }
 
-    // Get all spawn points for Vanessa type
     TArray<AFNAFAISpawnPoint*> VanessaSpawnPoints = GetAllSpawnPointsFor(EFNAFAISpawnType::Vanessa);
     if (VanessaSpawnPoints.Num() == 0)
     {
         return;
     }
 
-    // Filter to hidden spawn points (not visible from player camera)
     UWorld* World = GetWorld();
-    if (!World)
-    {
-        return;
-    }
+    if (!World) return;
 
-    APlayerCameraManager* CameraManager = UGameplayStatics::GetPlayerCameraManager(World, 0);
-    if (!CameraManager)
-    {
-        return;
-    }
+    APlayerController* PC = UGameplayStatics::GetPlayerController(World, 0);
+    if (!PC) return;
 
-    FVector CameraLocation = CameraManager->GetCameraLocation();
-    FVector CameraForward = CameraManager->GetCameraRotation().Vector();
+    FVector ViewLocation;
+    FRotator ViewRotation;
+    PC->GetPlayerViewPoint(ViewLocation, ViewRotation);
 
+    /* IDA: line trace from ViewLocation to each spawn point.
+       If trace hits something (occluded from player), add to hidden list. */
     TArray<AFNAFAISpawnPoint*> HiddenSpawnPoints;
     for (AFNAFAISpawnPoint* SpawnPoint : VanessaSpawnPoints)
     {
-        if (!SpawnPoint || !SpawnPoint->GetRootComponent())
+        if (!SpawnPoint || !SpawnPoint->GetRootComponent()) continue;
+
+        FVector SpawnLoc = SpawnPoint->GetRootComponent()->GetComponentLocation();
+        FHitResult HitResult;
+        bool bHit = World->LineTraceSingleByChannel(
+            HitResult, ViewLocation, SpawnLoc, ECC_Visibility);
+        if (bHit)
         {
-            continue;
+            HiddenSpawnPoints.Add(SpawnPoint);
         }
-
-        FVector SpawnLocation = SpawnPoint->GetRootComponent()->GetComponentLocation();
-        FVector DirToSpawn = (SpawnLocation - CameraLocation).GetSafeNormal();
-
-        // Check if out of FOV
-        if (FVector::DotProduct(CameraForward, DirToSpawn) > 0.7f)
-        {
-            // In view - do line trace to confirm
-            FHitResult HitResult;
-            FCollisionQueryParams QueryParams;
-            bool bHit = World->LineTraceSingleByChannel(HitResult, CameraLocation, SpawnLocation, ECC_Visibility, QueryParams);
-            if (!bHit)
-            {
-                continue; // Visible, skip
-            }
-        }
-
-        HiddenSpawnPoints.Add(SpawnPoint);
     }
 
     if (HiddenSpawnPoints.Num() == 0)
@@ -2171,15 +2185,19 @@ void UAIManagementSystem::SpawnVannyOrVanessa(bool bSpawnVanny, bool& bOutSpawne
         return;
     }
 
-    // Select closest hidden spawn point
-    float ClosestDist = MAX_FLT;
+    /* IDA UpdateOperation: picks closest hidden spawn point whose distance >= MinimumSpawnDistance.
+       Original uses async nav path distance; simplified to Euclidean. */
+    const UAISystemSettings* Settings = GetDefault<UAISystemSettings>();
+    float MinDist = Settings ? Settings->MinimumSpawnDistance : 2000.0f;
+
+    float BestDist = MAX_FLT;
     AFNAFAISpawnPoint* BestSpawnPoint = nullptr;
     for (AFNAFAISpawnPoint* SpawnPoint : HiddenSpawnPoints)
     {
-        float Dist = FVector::Dist(CameraLocation, SpawnPoint->GetRootComponent()->GetComponentLocation());
-        if (Dist < ClosestDist)
+        float Dist = FVector::Dist(ViewLocation, SpawnPoint->GetRootComponent()->GetComponentLocation());
+        if (Dist >= MinDist && Dist < BestDist)
         {
-            ClosestDist = Dist;
+            BestDist = Dist;
             BestSpawnPoint = SpawnPoint;
         }
     }
@@ -2189,22 +2207,10 @@ void UAIManagementSystem::SpawnVannyOrVanessa(bool bSpawnVanny, bool& bOutSpawne
         return;
     }
 
-    // Spawn using RuinedPatrol subtype (type 3 from IDA)
-    FVector SpawnLocation = BestSpawnPoint->GetRootComponent()->GetComponentLocation();
-    FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation, FVector::OneVector);
-
-    bool bSuccess = false;
-    APawn* SpawnedPawn = SpawnAITypeWithTransformSafeWithSubType(
-        EFNAFAISpawnType::Vanessa,
-        SpawnTransform,
-        EFNAFAISubType::Ruined_Patrol,
-        bSuccess,
-        ESpawnActorCollisionHandlingMethod::AlwaysSpawn,
-        nullptr,
-        false
-    );
-
-    bOutSpawned = bSuccess && SpawnedPawn != nullptr;
+    /* IDA: calls SpawnAIAtSpawnPoint(bestPoint, bSpawnVanny) which maps
+       bSpawnVanny → Shattered(Vanny) or None(Vanessa) subtype */
+    SpawnAIAtSpawnPoint(BestSpawnPoint, bSpawnVanny);
+    bOutSpawned = true;
 }
 
 APawn* UAIManagementSystem::SpawnSpecificAIOnPathWithSubType(EFNAFAISpawnType AIType, EFNAFAISubType AISubType, FName PathName)
@@ -2767,33 +2773,34 @@ void UAIManagementSystem::StoreAnimatronicSpawn(EFNAFAISpawnType AIType, FName P
 
 void UAIManagementSystem::StartManager()
 {
-    if (TimerHandle.IsValid())
+    /* IDA: timer setup is skipped if handle already valid,
+       but init (FindAllSpawnPoints + delegate binding) still runs if !bHasStarted */
+    if (!TimerHandle.IsValid())
     {
-        return; // Already started
+        UWorld* World = GetWorld();
+        if (!World) return;
+
+        FTimerDelegate TimerDelegate;
+        TimerDelegate.BindUObject(this, &UAIManagementSystem::OnTickAIManager);
+        World->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, TickDelta, true);
     }
 
-    UWorld* World = GetWorld();
-    if (!World)
+    if (!bHasStarted)
     {
-        return;
+        FindAllSpawnPoints();
+
+        UWorld* World = GetWorld();
+        if (World)
+        {
+            UWorldStateSystem* WorldStateSys = World->GetGameInstance()->GetSubsystem<UWorldStateSystem>();
+            if (WorldStateSys)
+            {
+                WorldStateSys->OnWorldStateChanged.AddDynamic(this, &UAIManagementSystem::OnWorldStateChanged);
+            }
+        }
+
+        bHasStarted = true;
     }
-
-    // Set up repeating timer for OnTickAIManager
-    FTimerDelegate TimerDelegate;
-    TimerDelegate.BindUObject(this, &UAIManagementSystem::OnTickAIManager);
-    World->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, TickDelta, true);
-
-    // Find all spawn points in world
-    FindAllSpawnPoints();
-
-    // Bind to world state changes
-    UWorldStateSystem* WorldStateSys = World->GetGameInstance()->GetSubsystem<UWorldStateSystem>();
-    if (WorldStateSys)
-    {
-        WorldStateSys->OnWorldStateChanged.AddDynamic(this, &UAIManagementSystem::OnWorldStateChanged);
-    }
-
-    bHasStarted = true;
 }
 
 void UAIManagementSystem::Reset()
@@ -3070,130 +3077,144 @@ void UAIManagementSystem::FindSpawnNotVisibleAtDistance(float Distance, EFNAFAIS
     }
 }
 
-// Main AI tick (called on repeating timer)
 void UAIManagementSystem::OnTickAIManager()
 {
-    // 1. Decay Vanny meter
     const UAISystemSettings* Settings = GetDefault<UAISystemSettings>();
+
+    /* IDA: TickDelta * VannyMeterIncreasePerSecond passed directly (no negation).
+       The meter increases over time; AdjustVannyMeter clamps at 0. */
     if (Settings)
     {
-        // VannyMeterIncreasePerSecond acts as decay rate when negated per tick
-        float DecayAmount = -(TickDelta * Settings->VannyMeterIncreasePerSecond);
-        VannyMeter.AdjustVannyMeter(DecayAmount);
+        VannyMeter.AdjustVannyMeter(TickDelta * Settings->VannyMeterIncreasePerSecond);
     }
 
-    // 2. Handle spawn logic
     SpawnHandling();
 
-    // 3. Update cached distance results
     if (RegisteredPawns.Num() == 0)
     {
         CachedDistanceResults.Empty();
-        return;
+        goto HideCheck;
     }
 
-    // Calculate distances synchronously (async workers not available)
-    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
-    if (PlayerPawn)
     {
-        FVector PlayerLocation = PlayerPawn->GetActorLocation();
-        CachedDistanceResults.Empty();
-
-        for (APawn* AIPawn : RegisteredPawns)
+        APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+        if (PlayerPawn)
         {
-            if (!AIPawn || !IsValid(AIPawn))
-            {
-                continue;
-            }
+            FVector PlayerLocation = PlayerPawn->GetActorLocation();
+            CachedDistanceResults.Empty();
 
-            FAIDistanceResult Result;
-            Result.Pawn = AIPawn;
-            Result.AIType = AIPawn->GetClass()->ImplementsInterface(UFNAFManagedAI::StaticClass()) ?
-                IFNAFManagedAI::Execute_GetManagedAIType(AIPawn) : EFNAFAISpawnType::None;
-            Result.NavDistance = FVector::Dist(AIPawn->GetActorLocation(), PlayerLocation);
-            CachedDistanceResults.Add(Result);
+            for (APawn* AIPawn : RegisteredPawns)
+            {
+                if (!AIPawn || !IsValid(AIPawn)) continue;
+
+                FAIDistanceResult Result;
+                Result.Pawn = AIPawn;
+                Result.AIType = AIPawn->GetClass()->ImplementsInterface(UFNAFManagedAI::StaticClass())
+                    ? IFNAFManagedAI::Execute_GetManagedAIType(AIPawn)
+                    : EFNAFAISpawnType::None;
+                Result.NavDistance = FVector::Dist(AIPawn->GetActorLocation(), PlayerLocation);
+                CachedDistanceResults.Add(Result);
+            }
         }
     }
 
-    // 4. AI Teleport logic: if enabled and no pawns have sight to player
+    /**
+     * IDA: Timer accumulation is conditional. The original async AIDistanceCalc
+     * callback only increments TimeSinceLastEncounter when the closest AI's nav
+     * distance exceeds TeleportDistance (AI is far from player). If AI is already
+     * near the player, the timer does NOT accumulate — preventing teleportation
+     * when AI is close but hasn't called AISpottedPlayer.
+     *
+     * Teleport triggers when: enabled, pawns exist, none have sight, timer >= threshold.
+     * Original takes the FIRST registered pawn (no IPatrollerInterface filter).
+     */
+    {
+        float ClosestDist = FLT_MAX;
+        int32 ClosestIdx = -1;
+        for (int32 i = 0; i < CachedDistanceResults.Num(); ++i)
+        {
+            if (CachedDistanceResults[i].NavDistance < ClosestDist)
+            {
+                ClosestDist = CachedDistanceResults[i].NavDistance;
+                ClosestIdx = i;
+            }
+        }
+
+        if (ClosestIdx < 0 || (Settings && ClosestDist > Settings->TeleportDistance))
+        {
+            TimeSinceLastEncounter += TickDelta;
+        }
+    }
+
     if (bAITeleportEnabled && RegisteredPawns.Num() > 0 && PawnsWithSightToPlayer.Num() == 0)
     {
-        if (Settings && TimeSinceLastEncounter > Settings->TimeBetweenSightings)
+        if (Settings && TimeSinceLastEncounter >= Settings->TimeBetweenSightings)
         {
-            // TODO: Full teleport logic requires FNearestToDistancePathFinder async worker
-            // From IDA: Creates pathfinder, calls AddFindClosestPatrolPointQueries
-            // for the first registered pawn, then teleports on callback
-        }
-    }
-
-    // DEBUG: Track pawn positions to catch teleporting
-    static TMap<FName, FVector> LastKnownPositions;
-    static TMap<FName, float> LastKnownTime;
-    float CurrentTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-    for (APawn* AIPawn : RegisteredPawns)
-    {
-        if (!AIPawn || !IsValid(AIPawn)) continue;
-        FName PawnName = AIPawn->GetFName();
-        FVector CurrentPos = AIPawn->GetActorLocation();
-        if (FVector* LastPos = LastKnownPositions.Find(PawnName))
-        {
-            float MoveDelta = FVector::Dist(*LastPos, CurrentPos);
-            float TimeDelta = CurrentTime - *LastKnownTime.Find(PawnName);
-            if (MoveDelta > 100.0f) // Log any significant movement
+            APawn* TeleportTarget = RegisteredPawns.Num() > 0 ? RegisteredPawns[0] : nullptr;
+            if (TeleportTarget && IsValid(TeleportTarget))
             {
-                float Speed = (TimeDelta > 0.f) ? MoveDelta / TimeDelta : 0.f;
-                UE_LOG(LogAIManagement, Warning, TEXT("MOVE: %s moved %.0f units (speed=%.0f u/s, dt=%.3fs) From %s to %s"),
-                    *AIPawn->GetName(), MoveDelta, Speed, TimeDelta, *LastPos->ToString(), *CurrentPos.ToString());
+                TSharedRef<FNearestToDistancePathFinder> PathFinder = MakeShared<FNearestToDistancePathFinder>();
+                AddFindClosestPatrolPointQueries(TEXT("FindClosestPatrolPointOutOfView_Delegate"), TeleportTarget, PathFinder);
             }
+            TimeSinceLastEncounter = 0.0f;
         }
-        LastKnownPositions.Add(PawnName, CurrentPos);
-        LastKnownTime.Add(PawnName, CurrentTime);
     }
 
-    TimeSinceLastEncounter += TickDelta;
-
-    // 5. Check hiding AI adjacency
-    // If an AI is hiding, check if its room is still adjacent to the player.
-    // If not adjacent, eject from hide and reset world cue.
+HideCheck:
+    /* IDA: if AI is hiding, check room adjacency to player.
+       Eject from hide if hiding room is not in/adjacent to player's rooms. */
     if (AIHiding && IsValid(AIHiding))
     {
-        URoomSystem* RoomSys = GetWorld() ? GetWorld()->GetSubsystem<URoomSystem>() : nullptr;
+        UWorld* World = GetWorld();
+        URoomSystem* RoomSys = World ? World->GetSubsystem<URoomSystem>() : nullptr;
         if (RoomSys)
         {
             TArray<ARoomAreaBase*> PlayerRooms = RoomSys->GetPlayerCurrentRooms();
-            ARoomAreaBase* HidingRoom = RoomSys->GetRoomAtLocation(AIHiding->GetActorLocation());
+            ARoomAreaBase* HidingRoom = GetRoomAIPawnIsIn(AIHiding);
 
             bool bStillAdjacent = false;
-            if (HidingRoom)
+            for (ARoomAreaBase* PlayerRoom : PlayerRooms)
             {
-                for (ARoomAreaBase* PlayerRoom : PlayerRooms)
+                ARoomAreaBase* CastRoom = Cast<ARoomAreaBase>(PlayerRoom);
+                if (!CastRoom) continue;
+
+                RoomBeingTracked = CastRoom;
+                TArray<FRoomAdjacencyInfo> AdjRooms = CastRoom->GetAllAdjacentRooms();
+                if (AdjRooms.FindByPredicate([HidingRoom](const FRoomAdjacencyInfo& Adj)
                 {
-                    if (PlayerRoom == HidingRoom)
-                    {
-                        bStillAdjacent = true;
-                        break;
-                    }
-                    TArray<FRoomAdjacencyInfo> Adjacent = PlayerRoom->GetAllAdjacentRooms();
-                    for (const FRoomAdjacencyInfo& Adj : Adjacent)
-                    {
-                        if (Adj.Room.Get() == HidingRoom)
-                        {
-                            bStillAdjacent = true;
-                            break;
-                        }
-                    }
-                    if (bStillAdjacent) break;
+                    return Adj.Room.Get() == HidingRoom;
+                }))
+                {
+                    bStillAdjacent = true;
+                    break;
                 }
             }
 
             if (!bStillAdjacent)
             {
-                // Eject from hide mode
+                if (CurrentHideLocation)
+                {
+                    AActor* HideCueActor = nullptr;
+                    UFunction* GetCueFn = CurrentHideLocation->FindFunction(FName("GetHideCueActor"));
+                    if (GetCueFn)
+                    {
+                        CurrentHideLocation->ProcessEvent(GetCueFn, &HideCueActor);
+                    }
+                    if (HideCueActor)
+                    {
+                        UFunction* ResetCueFn = HideCueActor->FindFunction(FName("ResetWorldCue"));
+                        if (ResetCueFn)
+                        {
+                            HideCueActor->ProcessEvent(ResetCueFn, nullptr);
+                        }
+                    }
+                }
                 if (AIHiding->GetClass()->ImplementsInterface(UAIHiderInterface::StaticClass()))
                 {
-                    IAIHiderInterface::Execute_ExitHideMode(AIHiding, nullptr);
+                    IAIHiderInterface::Execute_ExitHideMode(AIHiding, CurrentHideLocation);
                 }
                 AIHiding = nullptr;
+                CurrentHideLocation = nullptr;
             }
         }
     }
@@ -3207,18 +3228,21 @@ void UAIManagementSystem::SpawnHandling()
         return;
     }
 
-    // IDA: Iterates TypesExpected, checks TypesSpawned for matching AIType byte
-    // NOT RegisteredPawns — TypesSpawned is a simple EFNAFAISpawnType array
     for (const FAnimatronicExpectedData& Expected : TypesExpected)
     {
-        bool bAlreadySpawned = TypesSpawned.Contains(Expected.AIType);
-
-        if (!bAlreadySpawned)
+        if (TypesSpawned.Contains(Expected.AIType))
         {
-            UE_LOG(LogAIManagement, Warning, TEXT("SpawnHandling: type %d NOT in TypesSpawned (%d entries), calling SpawnAIOnPath"),
-                (int32)Expected.AIType, TypesSpawned.Num());
-            SpawnAIOnPath(Expected.AIType, false, Expected.PathName);
+            continue;
         }
+
+        /* IDA: only types 0 (Chica), 1 (Roxy), 2 (Monty) go through SpawnAIOnPath.
+           Other types (Vanessa, DJMusicMan, etc.) are spawned via different mechanisms. */
+        if ((int32)Expected.AIType > 2)
+        {
+            continue;
+        }
+
+        SpawnAIOnPath(Expected.AIType, false, Expected.PathName);
     }
 
     // Handle hiding AI if none currently hiding
@@ -3244,12 +3268,110 @@ void UAIManagementSystem::PostGameLoad_Implementation()
     bAITeleportEnabled = AIState.bAITeleportEnabled;
 }
 
+/* IDA 0x140efc250: Iterates all registered patrol paths, checks each point
+   for camera visibility (dot product + line trace), and finds the non-visible
+   point closest to TeleportDistance from the player. Originally async via
+   FNearestToDistancePathFinder; implemented synchronously here. */
 void UAIManagementSystem::AddFindClosestPatrolPointQueries(const FString& DebugName, APawn* AIPawn, TSharedRef<FNearestToDistancePathFinder>& PathFinder)
 {
-    // This is a helper that adds pathfinding queries to an async worker
-    // In the full implementation, it iterates RegisteredPatrolPaths and
-    // calls PathFinder->FindDistances for each path point
-    // Simplified: no-op since async workers aren't fully defined
+    const UAISystemSettings* Settings = GetDefault<UAISystemSettings>();
+    if (!Settings) return;
+
+    PathFinder->ExpectedLength = Settings->TeleportDistance;
+
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(World, 0);
+    if (!PlayerPawn) return;
+
+    FVector PlayerLocation = PlayerPawn->GetActorLocation();
+
+    APlayerCameraManager* CamMgr = UGameplayStatics::GetPlayerCameraManager(World, 0);
+    if (!CamMgr) return;
+
+    FVector CameraLocation;
+    FRotator CameraRotation;
+    CamMgr->GetCameraViewPoint(CameraLocation, CameraRotation);
+    FVector CameraForward = CameraRotation.Vector();
+
+    float HalfHeight = AIPawn->GetDefaultHalfHeight();
+
+    float BestDistDelta = FLT_MAX;
+    UObject* BestPath = nullptr;
+    int32 BestPointIndex = -1;
+    FVector BestPointLocation = FVector::ZeroVector;
+
+    for (const FWeakObjectPtr& PathRef : RegisteredPatrolPaths)
+    {
+        if (!PathRef.IsValid()) continue;
+        UObject* PathObj = PathRef.Get();
+
+        int32 NumPoints = IPathPointProvider::Execute_GetNumberOfPathPoints(PathObj);
+        for (int32 i = 0; i < NumPoints; ++i)
+        {
+            FVector PointLoc = IPathPointProvider::Execute_GetPointLocation(PathObj, i);
+            FVector MidPoint(PointLoc.X, PointLoc.Y, PointLoc.Z + HalfHeight);
+
+            FVector ToPoint = MidPoint - CameraLocation;
+            float Dot = FVector::DotProduct(ToPoint, CameraForward);
+
+            bool bVisible = false;
+            if (Dot > 0.0f)
+            {
+                FHitResult Hit;
+                FCollisionQueryParams Params(FCollisionQueryParams::DefaultQueryParam);
+                Params.AddIgnoredActor(PlayerPawn);
+
+                if (!World->LineTraceSingleByChannel(Hit, CameraLocation, MidPoint, ECC_Visibility, Params))
+                {
+                    bVisible = true;
+                }
+            }
+
+            if (bVisible) continue;
+
+            /* IDA: original uses async navigation distance; we approximate
+               with synchronous GetPathLength (falls back to Euclidean) */
+            float PathLen = 0.0f;
+            UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+            if (NavSys)
+            {
+                ENavigationQueryResult::Type Result = NavSys->GetPathLength(
+                    PlayerLocation, PointLoc, PathLen);
+                if (Result != ENavigationQueryResult::Success)
+                {
+                    PathLen = FVector::Dist(PointLoc, PlayerLocation);
+                }
+            }
+            else
+            {
+                PathLen = FVector::Dist(PointLoc, PlayerLocation);
+            }
+
+            float Delta = FMath::Abs(PathLen - PathFinder->ExpectedLength);
+            if (Delta < BestDistDelta)
+            {
+                BestDistDelta = Delta;
+                BestPath = PathObj;
+                BestPointIndex = i;
+                BestPointLocation = PointLoc;
+            }
+        }
+    }
+
+    /* Teleport AI to best non-visible point and assign patrol path */
+    if (BestPath && BestPointIndex >= 0)
+    {
+        AIPawn->SetActorLocation(BestPointLocation);
+
+        if (AIPawn->GetClass()->ImplementsInterface(UPatrollerInterface::StaticClass()))
+        {
+            TScriptInterface<IPathPointProvider> PatrolPath(BestPath);
+            IPatrollerInterface::Execute_SetPatrolPath(AIPawn, PatrolPath);
+            IPatrollerInterface::Execute_SetCurrentPatrolPointIndex(AIPawn, BestPointIndex);
+        }
+    }
 }
 
 FFNAFAISettingInfo* UAIManagementSystem::GetAITypeInfo(EFNAFAISpawnType AIType)

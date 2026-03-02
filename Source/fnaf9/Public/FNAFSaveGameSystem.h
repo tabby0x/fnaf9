@@ -10,6 +10,7 @@ class UFNAFMasterData;
 class UFNAFSaveData;
 class UFNAFChowdaSaveData;
 class UUserWidget;
+class USaveGame;
 
 UCLASS(Blueprintable)
 class FNAF9_API UFNAFSaveGameSystem : public UGameInstanceSubsystem {

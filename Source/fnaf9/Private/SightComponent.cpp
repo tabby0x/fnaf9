@@ -246,7 +246,7 @@ void USightComponent::ProcessDetectionResults(TArray<AActor*>& ActorsSpotted)
 //   2. Cast check to UVisualSourceComponent
 //   3. If owner has "Player" tag: call DetectTheSource(Location, Actor, bVisible)
 
-void USightComponent::NotifyVisualSource(AActor* Actor, const FVector& ObserverLocation, bool bVisible)
+void USightComponent::NotifyVisualSource(AActor* Actor, const FVector& ObserverLocation, bool bInVisible)
 {
     if (!Actor)
     {
@@ -259,7 +259,7 @@ void USightComponent::NotifyVisualSource(AActor* Actor, const FVector& ObserverL
         AActor* Owner = GetOwner();
         if (Owner && Owner->ActorHasTag(FName("Player")))
         {
-            VisualSource->DetectTheSource(ObserverLocation, Actor, bVisible);
+            VisualSource->DetectTheSource(ObserverLocation, Actor, bInVisible);
         }
     }
 }

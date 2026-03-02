@@ -35,7 +35,7 @@ UWorldStateSystem::UWorldStateSystem()
 
     PlayerDeathCount = 0;
     PlayerSpottedCount = 0;
-    SurvivalMaxDeaths = -1;
+    SurvivalMaxDeaths = 0;
 
     LastSavedPlayerLocation = FVector::ZeroVector;
     LastSavedPlayerRotation = FRotator::ZeroRotator;

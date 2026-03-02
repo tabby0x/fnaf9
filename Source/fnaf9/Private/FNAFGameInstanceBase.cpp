@@ -76,12 +76,11 @@ void UFNAFGameInstanceBase::StartGamePlay(EFNAFGameType GameType)
     CurrentGameType = GameType;
     bFromTitle = true;
 
-    // TODO: UGameClockSystem needs SetupSystem(EFNAFGameType) declared
-    // UGameClockSystem* ClockSystem = GetSubsystem<UGameClockSystem>();
-    // if (ClockSystem)
-    // {
-    //     ClockSystem->SetupSystem(GameType);
-    // }
+    UGameClockSystem* ClockSystem = GetSubsystem<UGameClockSystem>();
+    if (ClockSystem)
+    {
+        ClockSystem->SetupSystem(GameType);
+    }
 
     // Touch inventory system to ensure initialization
     GetSubsystem<UFNAFInventorySystem>();
@@ -597,12 +596,11 @@ float UFNAFGameInstanceBase::GetCPUBenchmarkResult()
 
 void UFNAFGameInstanceBase::LogGameClockDelegates()
 {
-    // TODO: UGameClockSystem needs LogConnectedDelegates() declared
-    // UGameClockSystem* ClockSystem = GetSubsystem<UGameClockSystem>();
-    // if (ClockSystem)
-    // {
-    //     ClockSystem->LogConnectedDelegates();
-    // }
+    UGameClockSystem* ClockSystem = GetSubsystem<UGameClockSystem>();
+    if (ClockSystem)
+    {
+        ClockSystem->LogConnectedDelegates();
+    }
 }
 
 void UFNAFGameInstanceBase::OnGameActivityLoadComplete()
@@ -617,12 +615,11 @@ void UFNAFGameInstanceBase::OnGameActivityLoadComplete()
     CurrentGameType = EFNAFGameType::Normal;
     bFromTitle = true;
 
-    // TODO: UGameClockSystem needs SetupSystem(EFNAFGameType) declared
-    // UGameClockSystem* ClockSystem = GetSubsystem<UGameClockSystem>();
-    // if (ClockSystem)
-    // {
-    //     ClockSystem->SetupSystem(EFNAFGameType::Normal);
-    // }
+    UGameClockSystem* ClockSystem = GetSubsystem<UGameClockSystem>();
+    if (ClockSystem)
+    {
+        ClockSystem->SetupSystem(EFNAFGameType::Normal);
+    }
 
     // Touch inventory system to ensure initialization
     GetSubsystem<UFNAFInventorySystem>();

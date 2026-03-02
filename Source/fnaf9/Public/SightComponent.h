@@ -65,7 +65,7 @@ private:
     UPROPERTY(BlueprintReadWrite, EditAnywhere, meta = (AllowPrivateAccess = true))
     TArray<FName> IncludeTags;
 
-    // IDA: *(_WORD *)&this->bWaitingOnResults = 0 — two consecutive bools
+    // IDA: *(_WORD *)&this->bWaitingOnResults = 0 ï¿½ two consecutive bools
     bool bWaitingOnResults;
     bool bWaitingOnMoonManResults;
 
@@ -157,5 +157,5 @@ private:
     void ProcessDetectionResults(TArray<AActor*>& ActorsSpotted);
 
     /** Notify a VisualSourceComponent of detection state if owner has "Player" tag. */
-    void NotifyVisualSource(AActor* Actor, const FVector& ObserverLocation, bool bVisible);
+    void NotifyVisualSource(AActor* Actor, const FVector& ObserverLocation, bool bInVisible);
 };

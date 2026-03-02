@@ -8,6 +8,7 @@
 #include "Engine/Texture2D.h"
 #include "UObject/ConstructorHelpers.h"
 #include "GameFramework/GameModeBase.h"
+#include "fnaf9GameModeBase.h"
 
 AMoonmanSpawnPoint::AMoonmanSpawnPoint()
 {
@@ -66,14 +67,18 @@ void AMoonmanSpawnPoint::BeginPlay()
 
     originalProbabilityOfSpawn = probabilityOfSpawn;
 
-    /* IDA: Binds FScriptDelegate(this, "OnSetAIDisplay") to game mode's AI
-       display delegate. Billboard visibility set from current display state.
-       The exact game mode delegate offset depends on the custom FNAF game mode class. */
+    /* IDA: Binds OnSetAIDisplay delegate to game mode, sets billboard
+       visibility from current AI display state */
     if (World)
     {
-        AGameModeBase* GameMode = World->GetAuthGameMode();
-        if (GameMode)
+        Afnaf9GameModeBase* FNAFGameMode = Cast<Afnaf9GameModeBase>(World->GetAuthGameMode());
+        if (FNAFGameMode)
         {
+            FNAFGameMode->OnSetAIDisplay.AddDynamic(this, &AMoonmanSpawnPoint::OnSetAIDisplay);
+            if (BillboardComponent)
+            {
+                BillboardComponent->SetHiddenInGame(!FNAFGameMode->IsAIDisplayOn());
+            }
         }
     }
 

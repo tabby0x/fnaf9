@@ -121,8 +121,9 @@ private:
     // Timer callback -> called every TickRate real seconds
     void GameClockTick();
 
-    // Debug logging
+public:
     void LogConnectedDelegates();
+private:
 
     // Hidden members restored from IDA constructor (initialization order preserved)
     FTimerHandle TimerHandle;

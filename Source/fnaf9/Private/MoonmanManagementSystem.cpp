@@ -129,9 +129,9 @@ void UMoonmanManagementSystem::UnpauseMoonmanManager()
     World->GetTimerManager().UnPauseTimer(TimerHandle);
 }
 
-/* IDA: 5-second repeating timer. The delegate target method is obfuscated
-   (IDA shows FAISenseAffiliationFilter::PostSerialize due to type confusion).
-   Timer handle set up so Pause/Unpause work correctly. */
+/* IDA: 5-second repeating timer. Callback is COMDAT-folded to an empty retn
+   (identical empty bodies merged by linker). The timer exists as a state flag
+   so PauseMoonmanManager/UnpauseMoonmanManager work correctly. */
 void UMoonmanManagementSystem::StartMoonmanDangerManager()
 {
     UWorld* World = GetWorld();
@@ -141,7 +141,7 @@ void UMoonmanManagementSystem::StartMoonmanDangerManager()
     }
 
     FTimerDelegate TimerDelegate;
-    // TimerDelegate.BindUObject(this, &UMoonmanManagementSystem::???);
+    TimerDelegate.BindLambda([](){});
     World->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, 5.0f, true);
 }
 
@@ -158,6 +158,6 @@ void UMoonmanManagementSystem::StartMoonmanLiteManager()
     }
 
     FTimerDelegate TimerDelegate;
-    // TimerDelegate.BindUObject(this, &UMoonmanManagementSystem::???);
+    TimerDelegate.BindLambda([](){});
     World->GetTimerManager().SetTimer(TimerHandle, TimerDelegate, 5.0f, true);
 }

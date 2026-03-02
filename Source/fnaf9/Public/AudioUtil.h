@@ -15,15 +15,13 @@ public:
 private:
     UFUNCTION(BlueprintCallable)
     static void RemoveWwiseListener(AActor* Actor);
-    
+
     UFUNCTION(BlueprintCallable, meta=(WorldContext="WorldContextObject"))
     static bool IsAudioForActorPlaying(const UObject* WorldContextObject, AActor* Actor);
-    
+
     UFUNCTION(BlueprintCallable)
     static TSet<UAkComponent*> GetWwiseListeners();
-    
+
     UFUNCTION(BlueprintCallable)
     static void AddWwiseListener(AActor* Actor);
-    
 };
-
