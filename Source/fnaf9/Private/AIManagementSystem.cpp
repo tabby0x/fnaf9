@@ -763,16 +763,15 @@ TSubclassOf<APawn> UAIManagementSystem::GetPawnClassForTypeAndSubType(EFNAFAISpa
 // Patrol path queries
 TScriptInterface<ISeekerPatrolPath> UAIManagementSystem::GetPathForAI(EFNAFAISpawnType AIType, FName PathName) const
 {
+    /**
+     * IDA: original iterates RegisteredPatrolPaths calling Execute_GetSpawnType
+     * and Execute_GetPathName directly — no Cast. Blueprint-only interfaces have
+     * PointerOffset=0 so Cast<IInterface> returns nullptr; use Execute_ dispatch.
+     */
     for (const FWeakObjectPtr& WeakPath : RegisteredPatrolPaths)
     {
         UObject* PathObj = WeakPath.Get();
         if (!PathObj)
-        {
-            continue;
-        }
-
-        ISeekerPatrolPath* PatrolPath = Cast<ISeekerPatrolPath>(PathObj);
-        if (!PatrolPath)
         {
             continue;
         }
@@ -784,7 +783,7 @@ TScriptInterface<ISeekerPatrolPath> UAIManagementSystem::GetPathForAI(EFNAFAISpa
         {
             TScriptInterface<ISeekerPatrolPath> Result;
             Result.SetObject(PathObj);
-            Result.SetInterface(PatrolPath);
+            Result.SetInterface(static_cast<ISeekerPatrolPath*>(PathObj->GetInterfaceAddress(USeekerPatrolPath::StaticClass())));
             return Result;
         }
     }
@@ -802,19 +801,13 @@ TScriptInterface<ISeekerPatrolPath> UAIManagementSystem::GetPathByNameForAI(FNam
             continue;
         }
 
-        ISeekerPatrolPath* PatrolPath = Cast<ISeekerPatrolPath>(PathObj);
-        if (!PatrolPath)
-        {
-            continue;
-        }
-
         FName PathPathName = ISeekerPatrolPath::Execute_GetPathName(PathObj);
 
         if (PathPathName == PathName)
         {
             TScriptInterface<ISeekerPatrolPath> Result;
             Result.SetObject(PathObj);
-            Result.SetInterface(PatrolPath);
+            Result.SetInterface(static_cast<ISeekerPatrolPath*>(PathObj->GetInterfaceAddress(USeekerPatrolPath::StaticClass())));
             return Result;
         }
     }
@@ -2229,13 +2222,9 @@ APawn* UAIManagementSystem::SpawnSpecificAIOnPathWithSubType(EFNAFAISpawnType AI
         FName TestPathName = ISeekerPatrolPath::Execute_GetPathName(PathObj);
         if (TestPathName == PathName)
         {
-            ISeekerPatrolPath* PathInterface = Cast<ISeekerPatrolPath>(PathObj);
-            if (PathInterface)
-            {
-                PatrolPath.SetObject(PathObj);
-                PatrolPath.SetInterface(PathInterface);
-                break;
-            }
+            PatrolPath.SetObject(PathObj);
+            PatrolPath.SetInterface(static_cast<ISeekerPatrolPath*>(PathObj->GetInterfaceAddress(USeekerPatrolPath::StaticClass())));
+            break;
         }
     }
 
@@ -2267,7 +2256,7 @@ APawn* UAIManagementSystem::SpawnSpecificAIOnPathWithSubType(EFNAFAISpawnType AI
             {
                 TScriptInterface<IPathPointProvider> PathProvider;
                 PathProvider.SetObject(PathObj);
-                PathProvider.SetInterface(Cast<IPathPointProvider>(PathObj));
+                PathProvider.SetInterface(static_cast<IPathPointProvider*>(PathObj->GetInterfaceAddress(UPathPointProvider::StaticClass())));
                 IPatrollerInterface::Execute_SetPatrolPath(SpawnedPawn, PathProvider);
             }
         }
@@ -2320,7 +2309,7 @@ APawn* UAIManagementSystem::SpawnAIWithTransformAndPathWithSubType(EFNAFAISpawnT
                 {
                     TScriptInterface<IPathPointProvider> PathProvider;
                     PathProvider.SetObject(PathObj);
-                    PathProvider.SetInterface(Cast<IPathPointProvider>(PathObj));
+                    PathProvider.SetInterface(static_cast<IPathPointProvider*>(PathObj->GetInterfaceAddress(UPathPointProvider::StaticClass())));
                     IPatrollerInterface::Execute_SetPatrolPath(SpawnedPawn, PathProvider);
                 }
             }
@@ -2548,12 +2537,9 @@ APawn* UAIManagementSystem::SpawnAIOnPathWithSubType(EFNAFAISpawnType AIType, EF
     UObject* PathObj = PatrolPath.GetObject();
     if (PathObj)
     {
-        IPathPointProvider* PathInterface = Cast<IPathPointProvider>(
-            PathObj->GetClass()->ImplementsInterface(UPathPointProvider::StaticClass()) ? PathObj : nullptr);
-
         TScriptInterface<IPathPointProvider> PathProvider;
         PathProvider.SetObject(PathObj);
-        PathProvider.SetInterface(PathInterface);
+        PathProvider.SetInterface(static_cast<IPathPointProvider*>(PathObj->GetInterfaceAddress(UPathPointProvider::StaticClass())));
         IPatrollerInterface::Execute_SetPatrolPath(SpawnedPawn, PathProvider);
     }
 
@@ -2611,7 +2597,7 @@ APawn* UAIManagementSystem::SpawnAIOnPathNearLocation(EFNAFAISpawnType AIType, c
             {
                 TScriptInterface<IPathPointProvider> PathProvider;
                 PathProvider.SetObject(PathObj);
-                PathProvider.SetInterface(Cast<IPathPointProvider>(PathObj));
+                PathProvider.SetInterface(static_cast<IPathPointProvider*>(PathObj->GetInterfaceAddress(UPathPointProvider::StaticClass())));
                 IPatrollerInterface::Execute_SetPatrolPath(SpawnedPawn, PathProvider);
                 IPatrollerInterface::Execute_SetCurrentPatrolPointIndex(SpawnedPawn, ClosestIndex);
             }
@@ -2916,12 +2902,8 @@ void UAIManagementSystem::FindClosestPathPointForAI(APawn* AIPawn, bool& OutResu
                 OutLocation = PointLocation;
                 OutResultValid = true;
 
-                ISeekerPatrolPath* PatrolPath = Cast<ISeekerPatrolPath>(PathObj);
-                if (PatrolPath)
-                {
-                    OutPatrolPath.SetObject(PathObj);
-                    OutPatrolPath.SetInterface(PatrolPath);
-                }
+                OutPatrolPath.SetObject(PathObj);
+                OutPatrolPath.SetInterface(static_cast<ISeekerPatrolPath*>(PathObj->GetInterfaceAddress(USeekerPatrolPath::StaticClass())));
             }
         }
     }
@@ -2990,12 +2972,8 @@ void UAIManagementSystem::FindClosestPatrolPointOutOfView(APawn* AIPawn, bool& b
                 OutLocation = PointLocation;
                 bOutResultValid = true;
 
-                ISeekerPatrolPath* PatrolPath = Cast<ISeekerPatrolPath>(PathObj);
-                if (PatrolPath)
-                {
-                    OutPatrolPath.SetObject(PathObj);
-                    OutPatrolPath.SetInterface(PatrolPath);
-                }
+                OutPatrolPath.SetObject(PathObj);
+                OutPatrolPath.SetInterface(static_cast<ISeekerPatrolPath*>(PathObj->GetInterfaceAddress(USeekerPatrolPath::StaticClass())));
             }
         }
     }
