@@ -254,6 +254,7 @@ void UFNAFLevelManager::TickStreamingMode()
     {
         if (Level)
         {
+            UStreamingLevelUtil::ClearStandaloneFlagsForLoadedLevel(Level);
             Level->SetShouldBeLoaded(false);
         }
     }

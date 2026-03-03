@@ -37,6 +37,10 @@ public:
     UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"))
     static void EnableAllStreamingVolumes(const UObject* WorldContextObject, bool bEnable);
 
+    // Clears RF_Standalone on a loaded streaming level's map package/world so
+    // the sub-world can be reclaimed when unloading in PIE/editor.
+    static void ClearStandaloneFlagsForLoadedLevel(ULevelStreaming* StreamingLevel);
+
     // Non-reflected helper used by FStreamAllLevelsAction.
     // Finds a ULevelStreaming by matching the tail of its package name.
     static ULevelStreaming* FindAndCacheLevelStreamingObject(FName LevelName, UWorld* InWorld);

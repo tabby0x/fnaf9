@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "LightScenarioManager.h"
+#include "StreamingLevelUtil.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogLevelLoad, Log, All);
 
@@ -105,6 +106,7 @@ void ULevelLoadSubsystem::Tick(float DeltaTime)
                 // Step 2: Once hidden, request unload
                 if (!CurrentLevel->IsLevelVisible())
                 {
+                    UStreamingLevelUtil::ClearStandaloneFlagsForLoadedLevel(CurrentLevel);
                     CurrentLevel->SetShouldBeLoaded(false);
                 }
 

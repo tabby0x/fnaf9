@@ -15,6 +15,7 @@
 #include "Engine/LevelStreaming.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "StreamingLevelUtil.h"
 
 UChowdaDebugSubsystem::UChowdaDebugSubsystem()
 {
@@ -56,6 +57,7 @@ void UChowdaDebugSubsystem::GoToThisArea(EMapArea MapArea)
         FString PackageName = Level->GetWorldAssetPackageName();
         if (!PackageName.Contains(TEXT("N_DLC")))
         {
+            UStreamingLevelUtil::ClearStandaloneFlagsForLoadedLevel(Level);
             Level->SetShouldBeLoaded(false);
         }
     }

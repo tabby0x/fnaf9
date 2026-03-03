@@ -14,6 +14,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "PrecomputedVolumetricLightmap.h"
 #include "Engine/MapBuildDataRegistry.h"
+#include "StreamingLevelUtil.h"
 
 // Interval for incremental lighting propagation ticks (seconds)
 static float GPropagateTickInterval = 0.1f;
@@ -85,6 +86,18 @@ void ULightScenarioManager::PropagateLoadedLightingData()
                 World->PersistentLevel->LevelBuildDataId =
                     SLMWorld->PersistentLevel->LevelBuildDataId;
             }
+
+            // We only inspect this package for build-data IDs, so clear standalone
+            // flags to ensure this transient world does not survive map travel.
+            SLMPackage->ClearFlags(RF_Standalone);
+            ForEachObjectWithPackage(SLMPackage, [](UObject* Object)
+                {
+                    if (Object)
+                    {
+                        Object->ClearFlags(RF_Standalone);
+                    }
+                    return true;
+                });
         }
     }
     // DLC: MAP_LM_DLC_XX is already streamed by the data table,
@@ -737,6 +750,7 @@ void ULightScenarioManager::OnTick()
                 levelWaitingOn = OldLevel;
                 if (OldLevel)
                 {
+                    UStreamingLevelUtil::ClearStandaloneFlagsForLoadedLevel(OldLevel);
                     OldLevel->SetShouldBeLoaded(false);
                 }
                 changeAreaState = EChangeAreaState::UnloadingOldLevel;

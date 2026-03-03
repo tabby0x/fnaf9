@@ -72,6 +72,7 @@ public:
 
     virtual void Init() override;
     virtual void OnStart() override;
+    virtual void Shutdown() override;
 
     UFUNCTION(BlueprintCallable)
     void StartGamePlay(EFNAFGameType GameType);
@@ -247,8 +248,10 @@ protected:
     TWeakObjectPtr<UUserWidget> InstancedLoadingWidgetDLC;
 
     FDelegateHandle PostLoadDelegateHandle;
+    FDelegateHandle PreLoadMapDelegateHandle;
 
 private:
+    void HandlePreLoadMap(const FString& MapName);
     void OnApplicationDeactivated();
     void OnApplicationReactivated();
 

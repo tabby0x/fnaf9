@@ -94,6 +94,44 @@ UStreamingLevelUtil::UStreamingLevelUtil()
 {
 }
 
+void UStreamingLevelUtil::ClearStandaloneFlagsForLoadedLevel(ULevelStreaming* StreamingLevel)
+{
+    if (!StreamingLevel)
+    {
+        return;
+    }
+
+    UObject* LoadedLevelObject = StreamingLevel->GetLoadedLevel();
+    if (!LoadedLevelObject)
+    {
+        return;
+    }
+
+    UWorld* LoadedLevelWorld = Cast<UWorld>(LoadedLevelObject->GetOuter());
+    if (!LoadedLevelWorld)
+    {
+        return;
+    }
+
+    UPackage* LoadedLevelPackage = LoadedLevelWorld->GetOutermost();
+    if (!LoadedLevelPackage)
+    {
+        return;
+    }
+
+    LoadedLevelPackage->ClearFlags(RF_Standalone);
+    LoadedLevelWorld->ClearFlags(RF_Standalone);
+
+    ForEachObjectWithPackage(LoadedLevelPackage, [](UObject* PackageObject)
+        {
+            if (PackageObject)
+            {
+                PackageObject->ClearFlags(RF_Standalone);
+            }
+            return true;
+        });
+}
+
 // Finds a ULevelStreaming by matching the end of its package name.
 // Short package names get "/" prepended so "MyLevel" matches ".../MyLevel".
 ULevelStreaming* UStreamingLevelUtil::FindAndCacheLevelStreamingObject(FName LevelName, UWorld* InWorld)

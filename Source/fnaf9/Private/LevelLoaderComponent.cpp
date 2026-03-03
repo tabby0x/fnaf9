@@ -4,6 +4,7 @@
 #include "Engine/LevelStreaming.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "StreamingLevelUtil.h"
 
 ULevelLoaderComponent::ULevelLoaderComponent()
 {
@@ -75,6 +76,7 @@ void ULevelLoaderComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
                 if (!CurrentLevel->IsLevelVisible())
                 {
+                    UStreamingLevelUtil::ClearStandaloneFlagsForLoadedLevel(CurrentLevel);
                     CurrentLevel->SetShouldBeLoaded(false);
                 }
 

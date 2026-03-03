@@ -12,6 +12,7 @@
 #include "GameFramework/GameModeBase.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Blueprint/UserWidget.h"
+#include "UObject/UObjectIterator.h"
 // TODO: Add "MoviePlayer" module to Build.cs and uncomment:
 // #include "MoviePlayer.h"
 // TODO: Add "AkAudio" module to Build.cs and uncomment:
@@ -59,6 +60,11 @@ void UFNAFGameInstanceBase::Init()
 
     FCoreDelegates::OnControllerConnectionChange.AddUObject(this, &UFNAFGameInstanceBase::HandleControllerConnectionChange);
     FCoreDelegates::OnControllerPairingChange.AddUObject(this, &UFNAFGameInstanceBase::HandlecontrollerPairingChange);
+
+    if (!PreLoadMapDelegateHandle.IsValid())
+    {
+        PreLoadMapDelegateHandle = FCoreUObjectDelegates::PreLoadMap.AddUObject(this, &UFNAFGameInstanceBase::HandlePreLoadMap);
+    }
 }
 
 void UFNAFGameInstanceBase::OnStart()
@@ -69,6 +75,68 @@ void UFNAFGameInstanceBase::OnStart()
     FCoreDelegates::ApplicationHasReactivatedDelegate.AddUObject(this, &UFNAFGameInstanceBase::OnApplicationReactivated);
     FCoreDelegates::ApplicationWillEnterBackgroundDelegate.AddUObject(this, &UFNAFGameInstanceBase::OnApplicationDeactivated);
     FCoreDelegates::ApplicationHasEnteredForegroundDelegate.AddUObject(this, &UFNAFGameInstanceBase::OnApplicationReactivated);
+}
+
+void UFNAFGameInstanceBase::Shutdown()
+{
+    if (PreLoadMapDelegateHandle.IsValid())
+    {
+        FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadMapDelegateHandle);
+        PreLoadMapDelegateHandle.Reset();
+    }
+
+    Super::Shutdown();
+}
+
+void UFNAFGameInstanceBase::HandlePreLoadMap(const FString& /*MapName*/)
+{
+    auto ClearStandaloneForWorldPackage = [](UWorld* WorldToClear)
+    {
+        if (!WorldToClear)
+        {
+            return;
+        }
+
+        if (UPackage* WorldPackage = WorldToClear->GetOutermost())
+        {
+            WorldPackage->ClearFlags(RF_Standalone);
+            WorldToClear->ClearFlags(RF_Standalone);
+            ForEachObjectWithPackage(WorldPackage, [](UObject* WorldPackageObject)
+                {
+                    if (WorldPackageObject)
+                    {
+                        WorldPackageObject->ClearFlags(RF_Standalone);
+                    }
+                    return true;
+                });
+        }
+    };
+
+    for (TObjectIterator<UWorld> It; It; ++It)
+    {
+        UWorld* World = *It;
+        if (!World)
+        {
+            continue;
+        }
+
+        if (World->WorldType != EWorldType::PIE
+            && World->WorldType != EWorldType::Game
+            && World->WorldType != EWorldType::GamePreview)
+        {
+            continue;
+        }
+
+        ClearStandaloneForWorldPackage(World);
+
+        for (ULevelStreaming* StreamingLevel : World->GetStreamingLevels())
+        {
+            if (ULevel* LoadedLevel = StreamingLevel ? StreamingLevel->GetLoadedLevel() : nullptr)
+            {
+                ClearStandaloneForWorldPackage(Cast<UWorld>(LoadedLevel->GetOuter()));
+            }
+        }
+    }
 }
 
 void UFNAFGameInstanceBase::StartGamePlay(EFNAFGameType GameType)
