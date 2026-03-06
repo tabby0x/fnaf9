@@ -3118,16 +3118,28 @@ FAkAudioDevice * FAkAudioDevice::Get()
 		return nullptr;
 	}
 
+	const FName ModuleName = FAkAudioModule::GetAkAudioModuleName();
+
+#if WITH_EDITOR
+	// Hot reload can leave UObject destruction running through an abandoned AkAudio DLL.
+	// Resolve the live module first so we use the current device instead of a stale singleton.
+	if (FAkAudioModule* LiveModule = FModuleManager::GetModulePtr<FAkAudioModule>(ModuleName))
+	{
+		return LiveModule->GetAkAudioDevice();
+	}
+#endif
+
 	if (LIKELY(FAkAudioModule::AkAudioModuleIntance != nullptr))
 	{
 		return FAkAudioModule::AkAudioModuleIntance->GetAkAudioDevice();
 	}
-	else
+
+	if (FAkAudioModule* Module = FModuleManager::LoadModulePtr<FAkAudioModule>(ModuleName))
 	{
-		FAkAudioModule* mod = FModuleManager::LoadModulePtr<FAkAudioModule>(FAkAudioModule::GetAkAudioModuleName());
-		ensure(FAkAudioModule::AkAudioModuleIntance == mod);
-		return mod ? mod->GetAkAudioDevice() : nullptr;
+		return Module->GetAkAudioDevice();
 	}
+
+	return nullptr;
 }
 
 /**
