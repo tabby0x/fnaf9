@@ -10,6 +10,12 @@
 # Only whitelist the BlueprintUncooker plugin
 !Plugins/BlueprintUncooker/**
 
+# Whitelist the Wwise plugin source and metadata, but keep SDK/build payloads ignored
+!Plugins/Wwise/Source/**
+!Plugins/Wwise/Resources/**
+!Plugins/Wwise/Wwise.uplugin
+!Plugins/Wwise/LauncherInfo.json
+
 # Blacklist directories that should never be tracked
 Engine/
 Intermediate/
