@@ -827,6 +827,11 @@ class FAudiokineticToolsModule : public IAudiokineticTools
 		assetManagementManager.Uninit();
 	}
 
+	virtual bool SupportsDynamicReloading() override
+	{
+		return false;
+	}
+
 	static EEditorBuildResult BuildAkEventData(UWorld* world, FName name)
 	{
 		auto& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");

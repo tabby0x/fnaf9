@@ -57,6 +57,7 @@ class FAkAudioMixerModule : public IAkAudioMixerModule
 	/** IModuleInterface implementation */
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+	virtual bool SupportsDynamicReloading() override { return false; }
 
 	/** IAudioDeviceModule implementation */
 	virtual bool IsAudioMixerModule() const override;
